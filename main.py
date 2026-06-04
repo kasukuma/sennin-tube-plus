@@ -157,10 +157,10 @@ async def shorts_player(request: Request, v: str, force_instance: str = Query(No
         
         format_streams = video_data.get("formatStreams", [])
         if format_streams:
-            video_urls = [fmt.get("url") for fmt in format_streams]
+            video_urls = [f"https://www.youtube-nocookie.com/embed/{v}"]
         else:
             adaptive = video_data.get("adaptiveFormats", [])
-            video_urls = [fmt.get("url") for fmt in adaptive if "video" in fmt.get("type", "")]
+            video_urls = [f"https://www.youtube-nocookie.com/embed/{v}"]
 
         return templates.TemplateResponse("short.html", {
             "request": request,
