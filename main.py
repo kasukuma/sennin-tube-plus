@@ -14,43 +14,16 @@ templates = Jinja2Templates(directory="templates")
 templates.env.add_extension('jinja2.ext.do')
 
 INVIDIOUS_INSTANCES = [
-    'https://cal1.iv.ggtyler.dev/',
-    'https://eu-proxy.poketube.fun/',
-    'https://id.420129.xyz/',
-    'https://inv.nadeko.net/',
-    'https://inv1-nadeko-net.zproxy.org/',
-    'https://inv2-nadeko-net.zproxy.org/',
-    'https://inv3-nadeko-net.zproxy.org/',
-    'https://inv4-nadeko-net.zproxy.org/',
-    'https://invid-api.poketube.fun/',
-    'https://invidious-f5-si.zproxy.org/',
-    'https://invidious.0011.lt/',
-    'https://invidious.adminforge.de/',
-    'https://invidious.darkness.service/',
-    'https://invidious.dhusch.de/',
-    'https://invidious.ducks.party/',
-    'https://invidious.einfachzocken.eu/',
-    'https://invidious.esmailelbob.xyz/',
-    'https://invidious.f5.si/',
-    'https://invidious.jing.rocks/',
-    'https://invidious.lunivers.trade/',
-    'https://invidious.nerdvpn.de/',
-    'https://invidious.nikkosphere.com/',
-    'https://invidious.perennialte.ch/',
-    'https://invidious.private.coffee/',
-    'https://invidious.projectsegfau.lt/',
-    'https://invidious.reallyaweso.me/',
-    'https://iv.datura.network/',
-    'https://iv.duti.dev/',
-    'https://iv.melmac.space/',
-    'https://lekker.gay/',
-    'https://nyc1.iv.ggtyler.dev/',
-    'https://pol1.iv.ggtyler.dev/',
-    'https://super8.absturztau.be/',
-    'https://usa-proxy2.poketube.fun/',
-    'https://yewtu.be/',
-    'https://youtube.mosesmang.com/',
-    'https://yt.omada.cafe/',
+  "https://invidious.ritoge.com",
+  "https://yt.omada.cafe",
+  "https://invidious.darkness.services",
+  "https://invidious.f5.si",
+  "https://invidious.ducks.party",
+  "https://y.com.sb",
+  "https://super8.absturztau.be",
+  "https://inv.zoomerville.com",
+  "https://invidious.nerdvpn.de",
+  "https://inv.thepixora.com"
 ]
 
 limits = httpx.Limits(max_connections=300, max_keepalive_connections=100)
@@ -331,7 +304,8 @@ async def playlist(request: Request, list: str = Query(...), force_instance: str
 async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str = "videos", force_instance: str = Query(None)):
     try:
         tasks = [
-            fetch_invidious(f"/channels/{ucid}", {"sort_by": sort_by}, force_instance=force_instance),
+            fetch_invidious(f"/channels/{ucid}", force_instance=force_instance),
+            fetch_invidious(f"/channels/{ucid}/videos", {"sort_by": sort_by}, force_instance=force_instance),
             fetch_invidious(f"/channels/{ucid}/shorts", force_instance=force_instance),
             fetch_invidious(f"/channels/{ucid}/playlists", force_instance=force_instance),
             fetch_invidious(f"/channels/{ucid}/community", force_instance=force_instance)
@@ -340,12 +314,28 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         channel_data = results[0] if not isinstance(results[0], Exception) else {}
-        shorts_data = results[1] if not isinstance(results[1], Exception) else {}
-        playlists_data = results[2] if not isinstance(results[2], Exception) else {}
-        community_data = results[3] if not isinstance(results[3], Exception) else {}
+        videos_data = results[1] if not isinstance(results[1], Exception) else {}
+        shorts_data = results[2] if not isinstance(results[2], Exception) else {}
+        playlists_data = results[3] if not isinstance(results[3], Exception) else {}
+        community_data = results[4] if not isinstance(results[4], Exception) else {}
+
+        # 配列（list型）のレスポンスと辞書（dict型）のレスポンスの双方に対応
+        if isinstance(videos_data, list):
+            final_videos = videos_data
+        elif isinstance(videos_data, dict):
+            final_videos = videos_data.get("videos", [])
+        else:
+            final_videos = []
+
+        if isinstance(shorts_data, list):
+            final_shorts = shorts_data
+        elif isinstance(shorts_data, dict):
+            final_shorts = shorts_data.get("videos", [])
+        else:
+            final_shorts = []
 
         playlists = []
-        for pl in playlists_data.get("playlists", []):
+        for pl in playlists_data.get("playlists", []) if isinstance(playlists_data, dict) else (playlists_data if isinstance(playlists_data, list) else []):
             thumb = pl.get("playlistThumbnail", "")
             if thumb and not thumb.startswith("http"):
                 thumb = f"https://img.youtube.com/vi/{thumb}/mqdefault.jpg"
@@ -357,8 +347,9 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
             })
 
         author_name = channel_data.get("author")
-        author_icon = channel_data.get("authorThumbnails", [{"url": ""}])[-1]["url"]
+        author_icon = channel_data.get("authorThumbnails", [{"url": ""}])[-1]["url"] if channel_data.get("authorThumbnails") else ""
 
+        comments_list = community_data.get("comments", []) if isinstance(community_data, dict) else (community_data if isinstance(community_data, list) else [])
         community = [{
             "id": post.get("commentId", ""),
             "content": post.get("contentHtml", "").replace("\n", "<br>"),
@@ -366,7 +357,7 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
             "likes": post.get("likeCount", 0),
             "author": author_name,
             "author_icon": author_icon,
-        } for post in community_data.get("comments", [])]
+        } for post in comments_list]
 
         return templates.TemplateResponse("channel.html", {
             "request": request,
@@ -375,8 +366,8 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
             "author_icon": author_icon,
             "sub_count": channel_data.get("subCountText", "非公開"),
             "description": channel_data.get("descriptionHtml", ""),
-            "videos": channel_data.get("latestVideos", []),
-            "shorts": shorts_data.get("videos", []),
+            "videos": final_videos,
+            "shorts": final_shorts,
             "playlists": playlists,
             "community": community,
             "sort_by": sort_by,
